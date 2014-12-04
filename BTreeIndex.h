@@ -13,7 +13,7 @@
 #include "Bruinbase.h"
 #include "PageFile.h"
 #include "RecordFile.h"
-             
+#define RC_LEAFNODE_OVERFLOW 1001
 /**
  * The data structure to point to a particular entry at a b+tree leaf node.
  * An IndexCursor consists of pid (PageId of the leaf node) and 
@@ -56,6 +56,7 @@ class BTreeIndex {
    * @param rid[IN] the RecordId for the record being inserted into the index
    * @return error code. 0 if no error
    */
+  RC insertHelp(int key, const RecordId& rid, int currentHeight, PageId currentPid, PageId &siblingPid, int &siblingKey);
   RC insert(int key, const RecordId& rid);
 
   /**
