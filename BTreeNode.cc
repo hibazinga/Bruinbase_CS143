@@ -25,10 +25,10 @@ BTLeafNode::BTLeafNode()
  * @return 0 if successful. Return an error code if there is an error.
  */
 RC BTLeafNode::read(PageId pid, const PageFile& pf)
-{
+{ 
 	return pf.read(pid, buffer);
 }
-
+    
 /*
  * Write the content of the node to the page pid in the PageFile pf.
  * @param pid[IN] the PageId to write to
@@ -36,7 +36,7 @@ RC BTLeafNode::read(PageId pid, const PageFile& pf)
  * @return 0 if successful. Return an error code if there is an error.
  */
 RC BTLeafNode::write(PageId pid, PageFile& pf)
-{
+{ 
 	return pf.write(pid, buffer);
 }
 
@@ -45,7 +45,7 @@ RC BTLeafNode::write(PageId pid, PageFile& pf)
  * @return the number of keys in the node
  */
 int BTLeafNode::getKeyCount()
-{
+{ 
 	int count = 0;
 	memcpy(&count, &buffer, sizeof(int));
 	return count;
@@ -58,7 +58,7 @@ int BTLeafNode::getKeyCount()
  * @return 0 if successful. Return an error code if the node is full.
  */
 RC BTLeafNode::insert(int key, const RecordId& rid)
-{
+{ 
 	//check the number of key first, return error code if full
 	int count = getKeyCount();
 	if (count >= 80)
@@ -106,7 +106,7 @@ RC BTLeafNode::insert(int key, const RecordId& rid)
  * @param siblingKey[OUT] the first key in the sibling node after split.
  * @return 0 if successful. Return an error code if there is an error.
  */
-RC BTLeafNode::insertAndSplit(int key, const RecordId& rid,
+RC BTLeafNode::insertAndSplit(int key, const RecordId& rid, 
                               BTLeafNode& sibling, int& siblingKey)
 {
 	char *it = buffer; //create iterator from begin of buffer
@@ -149,7 +149,7 @@ RC BTLeafNode::insertAndSplit(int key, const RecordId& rid,
  * @return 0 if successful. Return an error code if there is an error.
  */
 RC BTLeafNode::locate(int searchKey, int& eid)
-{
+{ 
 	char *it = buffer; //create iterator from begin of buffer
 	it += sizeof(int) + sizeof(PageId); //pass the key count and pointer to the next node
 	int temp = 0;
@@ -172,7 +172,7 @@ RC BTLeafNode::locate(int searchKey, int& eid)
  * @return 0 if successful. Return an error code if there is an error.
  */
 RC BTLeafNode::readEntry(int eid, int& key, RecordId& rid)
-{
+{ 
 	char *it = buffer; //create iterator from begin of buffer
 	it += sizeof(int) + sizeof(PageId); //pass the key count and pointer to the next node
 	for (int i = 0; i < eid; i++) it += sizeof(int) + sizeof(RecordId); //go to the location
@@ -184,10 +184,10 @@ RC BTLeafNode::readEntry(int eid, int& key, RecordId& rid)
 
 /*
  * Return the pid of the next slibling node.
- * @return the PageId of the next sibling node
+ * @return the PageId of the next sibling node 
  */
 PageId BTLeafNode::getNextNodePtr()
-{
+{ 
 	char *it = buffer; //create iterator from begin of buffer
 	it += sizeof(int); //pass the key count
 	PageId id;
@@ -197,11 +197,11 @@ PageId BTLeafNode::getNextNodePtr()
 
 /*
  * Set the pid of the next slibling node.
- * @param pid[IN] the PageId of the next sibling node
+ * @param pid[IN] the PageId of the next sibling node 
  * @return 0 if successful. Return an error code if there is an error.
  */
 RC BTLeafNode::setNextNodePtr(PageId pid)
-{
+{ 
 	char *it = buffer; //create iterator from begin of buffer
 	it += sizeof(int); //pass the key count
 	memcpy(it, &pid, sizeof(PageId));
@@ -210,17 +210,17 @@ RC BTLeafNode::setNextNodePtr(PageId pid)
 
 
 /*
- *The structure of a 1024-byte buffer for the non-leaf node:
- *----------------------------------------------------------------------------
- *|KeyCount  |First Pid |Pair of (key, PageId)		|Left for potential use |
- *|(4 bytes) |(4 bytes) |(8 bytes * 120 = 960 bytes) |(56 bytes)             |
- *----------------------------------------------------------------------------
- */
+*The structure of a 1024-byte buffer for the non-leaf node:
+*----------------------------------------------------------------------------
+*|KeyCount  |First Pid |Pair of (key, PageId)		|Left for potential use |
+*|(4 bytes) |(4 bytes) |(8 bytes * 120 = 960 bytes) |(56 bytes)             |
+*----------------------------------------------------------------------------
+*/
 /*
- *Constructor of the class BTNonLeafNode.
- *Set the memory space for the buffer with the size of PAGE_SIZE
- *We are going to store maximum of 80 keys in one leaf node.
- */
+*Constructor of the class BTNonLeafNode.
+*Set the memory space for the buffer with the size of PAGE_SIZE
+*We are going to store maximum of 80 keys in one leaf node.
+*/
 BTNonLeafNode::BTNonLeafNode()
 {
 	memset(buffer, 0, PageFile::PAGE_SIZE);
@@ -232,10 +232,10 @@ BTNonLeafNode::BTNonLeafNode()
  * @return 0 if successful. Return an error code if there is an error.
  */
 RC BTNonLeafNode::read(PageId pid, const PageFile& pf)
-{
+{ 
 	return pf.read(pid, buffer);
 }
-
+    
 /*
  * Write the content of the node to the page pid in the PageFile pf.
  * @param pid[IN] the PageId to write to
@@ -243,7 +243,7 @@ RC BTNonLeafNode::read(PageId pid, const PageFile& pf)
  * @return 0 if successful. Return an error code if there is an error.
  */
 RC BTNonLeafNode::write(PageId pid, PageFile& pf)
-{
+{ 
 	return pf.write(pid, buffer);
 }
 
@@ -252,7 +252,7 @@ RC BTNonLeafNode::write(PageId pid, PageFile& pf)
  * @return the number of keys in the node
  */
 int BTNonLeafNode::getKeyCount()
-{
+{ 
 	int count;
 	memcpy(&count, buffer, sizeof(int));
 	return count;

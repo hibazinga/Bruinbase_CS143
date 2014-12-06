@@ -1,47 +1,54 @@
 /*
- * Copyright (C) 2008 by The Regents of the University of California
- * Redistribution of this file is permitted under the terms of the GNU
- * Public License (GPL).
- *
- * @author Junghoo "John" Cho <cho AT cs.ucla.edu>
- * @date 3/24/2008
- */
- 
+* Copyright (C) 2008 by The Regents of the University of California
+* Redistribution of this file is permitted under the terms of the GNU
+* Public License (GPL).
+*
+* @author Junghoo "John" Cho <cho AT cs.ucla.edu>
+* @date 3/24/2008
+*/
+
 #include "BTreeIndex.h"
 #include "BTreeNode.h"
 
 using namespace std;
 
 /*
- * BTreeIndex constructor
- */
+* BTreeIndex constructor
+*/
 BTreeIndex::BTreeIndex()
 {
 	treeHeight = 0;
-    rootPid = -1;
+	rootPid = -1;
+	currentPage = -1;
+	currentReadNode = new BTLeafNode();
 }
 
 /*
- * Open the index file in read or write mode.
- * Under 'w' mode, the index file should be created if it does not exist.
- * @param indexname[IN] the name of the index file
- * @param mode[IN] 'r' for read, 'w' for write
- * @return error code. 0 if no error
- */
+* Open the index file in read or write mode.
+* Under 'w' mode, the index file should be created if it does not exist.
+* @param indexname[IN] the name of the index file
+* @param mode[IN] 'r' for read, 'w' for write
+* @return error code. 0 if no error
+*/
 RC BTreeIndex::open(const string& indexname, char mode)
 {
 	if (pf.open(indexname, mode) != 0) return RC_FILE_OPEN_FAILED;
 	char buffer[PageFile::PAGE_SIZE];
+	if (pf.endPid() == 0)
+	{
+		close();
+		return open(indexname, mode);
+	}
 	if (pf.read(0, buffer) != 0) return RC_FILE_READ_FAILED;
 	memcpy(&rootPid, buffer, sizeof(PageId));
 	memcpy(&treeHeight, buffer + sizeof(PageId), sizeof(int));
-    return 0;
+	return 0;
 }
 
 /*
- * Close the index file.
- * @return error code. 0 if no error
- */
+* Close the index file.
+* @return error code. 0 if no error
+*/
 RC BTreeIndex::close()
 {
 	char buffer[PageFile::PAGE_SIZE];
@@ -51,10 +58,11 @@ RC BTreeIndex::close()
 	return pf.close();
 }
 
+
 /*
- * The help function of function insert to do the recursive work
- */
-RC BTreeIndex::insertHelp(int key, const RecordId& rid, int currentHeight, PageId currentPid, PageId &siblingPid, int &siblingKey)
+* The help function of function insert to do the recursive work
+*/
+RC BTreeIndex::insertHelp(int key, const RecordId& rid, int currentHeight, PageId currentPid, int& siblingKey, PageId& siblingPid)
 {
 	//base case: the current node is the leaf node
 	if (currentHeight == treeHeight)
@@ -67,9 +75,9 @@ RC BTreeIndex::insertHelp(int key, const RecordId& rid, int currentHeight, PageI
 		if (leaf->getKeyCount() < 80)
 		{
 			//insert the pair
-			if (leaf->insert(key, rid)) return RC_FILE_WRITE_FAILED; 
+			if (leaf->insert(key, rid)) return RC_FILE_WRITE_FAILED;
 			//write the modified content into the current page file
-			if (leaf->write(currentPid, pf)) return RC_FILE_WRITE_FAILED; 
+			if (leaf->write(currentPid, pf)) return RC_FILE_WRITE_FAILED;
 			return 0;  //success
 		}
 		else  //else, insert and split
@@ -77,17 +85,17 @@ RC BTreeIndex::insertHelp(int key, const RecordId& rid, int currentHeight, PageI
 			//create a sibling leaf node for splitting
 			BTLeafNode sibling = BTLeafNode();
 			//insert and split
-			if (leaf->insertAndSplit(key, rid, sibling, siblingKey)) return RC_FILE_WRITE_FAILED; 
+			if (leaf->insertAndSplit(key, rid, sibling, siblingKey)) return RC_FILE_WRITE_FAILED;
 			//assign the page id to the sibling 
-			siblingPid = pf.endPid(); 
+			siblingPid = pf.endPid();
 			//assign the next pointer of current node to the next pointer of sibling node
-			if (sibling.setNextNodePtr(leaf->getNextNodePtr())) return RC_FILE_WRITE_FAILED; 
+			if (sibling.setNextNodePtr(leaf->getNextNodePtr())) return RC_FILE_WRITE_FAILED;
 			//change the next pointer of the current node to the sibling node pid
 			if (leaf->setNextNodePtr(siblingPid)) return RC_FILE_WRITE_FAILED;
 			//write the modified current node to the page file
 			if (leaf->write(currentPid, pf)) return RC_FILE_WRITE_FAILED;
 			//write the new sibling node to the page file
-			if (sibling.write(siblingPid, pf)) return RC_FILE_WRITE_FAILED; 
+			if (sibling.write(siblingPid, pf)) return RC_FILE_WRITE_FAILED;
 			return RC_LEAFNODE_OVERFLOW;  //need to be tackle with on the upper level tree
 		}
 	}
@@ -95,17 +103,16 @@ RC BTreeIndex::insertHelp(int key, const RecordId& rid, int currentHeight, PageI
 	else
 	{
 		//create a non-leaf node
-		BTNonLeafNode *nonleaf = new BTNonLeafNode(); 
+		BTNonLeafNode *nonleaf = new BTNonLeafNode();
 		//read the content of current page file to the non-leaf node
 		if (nonleaf->read(currentPid, pf)) return RC_FILE_READ_FAILED;
 		//get the child pid that should be pointed to
 		PageId child;
 		if (nonleaf->locateChildPtr(key, child)) return RC_FILE_SEEK_FAILED;
 		//recursive call the the child page file
-		RC result = insertHelp(key, rid, currentHeight + 1, child, siblingPid, siblingKey);
+		RC result = insertHelp(key, rid, currentHeight + 1, child, siblingKey, siblingPid);
 		//if result < 0, return the error code
-		if (result == 0) return 0;
-		else if (result == RC_LEAFNODE_OVERFLOW) //insert key on the parent node
+		if (result == RC_LEAFNODE_OVERFLOW) //insert key on the parent node
 		{
 			//if there exists space to insert, do it
 			if (nonleaf->getKeyCount() < 120)
@@ -133,15 +140,16 @@ RC BTreeIndex::insertHelp(int key, const RecordId& rid, int currentHeight, PageI
 				return RC_LEAFNODE_OVERFLOW;  //need to be tackle with on the upper level tree
 			}
 		}
+		else if (result == 0) return 0;
 		else return RC_FILE_WRITE_FAILED; //otherwise, return the error code
 	}
 }
 /*
- * Insert (key, RecordId) pair to the index.
- * @param key[IN] the key for the value inserted into the index
- * @param rid[IN] the RecordId for the record being inserted into the index
- * @return error code. 0 if no error
- */
+* Insert (key, RecordId) pair to the index.
+* @param key[IN] the key for the value inserted into the index
+* @param rid[IN] the RecordId for the record being inserted into the index
+* @return error code. 0 if no error
+*/
 RC BTreeIndex::insert(int key, const RecordId& rid)
 {
 	// if the tree is empty, create one
@@ -163,7 +171,7 @@ RC BTreeIndex::insert(int key, const RecordId& rid)
 		//recursive call
 		int siblingKey;
 		PageId siblingPid;
-		RC result = insertHelp(key, rid, 1, rootPid, siblingPid, siblingKey);
+		RC result = insertHelp(key, rid, 1, rootPid, siblingKey, siblingPid);
 		if (result == 0) return 0;  //success
 		else if (result == RC_LEAFNODE_OVERFLOW) //in the case of overflow
 		{
@@ -179,28 +187,27 @@ RC BTreeIndex::insert(int key, const RecordId& rid)
 		}
 		else return RC_FILE_WRITE_FAILED;  //otherwise, return error code
 	}
-    return 0;
 }
 
 /*
- * Find the leaf-node index entry whose key value is larger than or 
- * equal to searchKey, and output the location of the entry in IndexCursor.
- * IndexCursor is a "pointer" to a B+tree leaf-node entry consisting of
- * the PageId of the node and the SlotID of the index entry.
- * Note that, for range queries, we need to scan the B+tree leaf nodes.
- * For example, if the query is "key > 1000", we should scan the leaf
- * nodes starting with the key value 1000. For this reason,
- * it is better to return the location of the leaf node entry 
- * for a given searchKey, instead of returning the RecordId
- * associated with the searchKey directly.
- * Once the location of the index entry is identified and returned 
- * from this function, you should call readForward() to retrieve the
- * actual (key, rid) pair from the index.
- * @param key[IN] the key to find.
- * @param cursor[OUT] the cursor pointing to the first index entry
- *                    with the key value.
- * @return error code. 0 if no error.
- */
+* Find the leaf-node index entry whose key value is larger than or
+* equal to searchKey, and output the location of the entry in IndexCursor.
+* IndexCursor is a "pointer" to a B+tree leaf-node entry consisting of
+* the PageId of the node and the SlotID of the index entry.
+* Note that, for range queries, we need to scan the B+tree leaf nodes.
+* For example, if the query is "key > 1000", we should scan the leaf
+* nodes starting with the key value 1000. For this reason,
+* it is better to return the location of the leaf node entry
+* for a given searchKey, instead of returning the RecordId
+* associated with the searchKey directly.
+* Once the location of the index entry is identified and returned
+* from this function, you should call readForward() to retrieve the
+* actual (key, rid) pair from the index.
+* @param key[IN] the key to find.
+* @param cursor[OUT] the cursor pointing to the first index entry
+*                    with the key value.
+* @return error code. 0 if no error.
+*/
 RC BTreeIndex::locate(int searchKey, IndexCursor& cursor)
 {
 	// if the tree is empty return the error code
@@ -226,32 +233,38 @@ RC BTreeIndex::locate(int searchKey, IndexCursor& cursor)
 	//store the two indices into the index cursor
 	cursor.pid = pid;
 	cursor.eid = eid;
-    return 0;
+	return 0;
 }
 
 /*
- * Read the (key, rid) pair at the location specified by the index cursor,
- * and move foward the cursor to the next entry.
- * @param cursor[IN/OUT] the cursor pointing to an leaf-node index entry in the b+tree
- * @param key[OUT] the key stored at the index cursor location.
- * @param rid[OUT] the RecordId stored at the index cursor location.
- * @return error code. 0 if no error
- */
+* Read the (key, rid) pair at the location specified by the index cursor,
+* and move foward the cursor to the next entry.
+* @param cursor[IN/OUT] the cursor pointing to an leaf-node index entry in the b+tree
+* @param key[OUT] the key stored at the index cursor location.
+* @param rid[OUT] the RecordId stored at the index cursor location.
+* @return error code. 0 if no error
+*/
 RC BTreeIndex::readForward(IndexCursor& cursor, int& key, RecordId& rid)
 {
-	BTLeafNode *leaf = new BTLeafNode();
-	//read the content to the leaf node
-	if (leaf->read(cursor.pid, pf)) return RC_FILE_READ_FAILED;
-	//read the entry of target eid
-	if (leaf->readEntry(cursor.eid, key, rid)) return RC_INVALID_CURSOR;
-	//point the cursor to the next entry if the entry is not the last one
-	if (cursor.eid < leaf->getKeyCount() - 1) cursor.eid++;
-	else //point the the first entry of the next node if the current entry is the last one
+	//read the page currentPage is not the page indexed in cursor
+	if (currentPage != cursor.pid)
+	{
+		if (currentReadNode->read(cursor.pid, pf)) return RC_FILE_READ_FAILED;
+		currentPage = cursor.pid;
+	}
+	//if exceed the last entry of the node, go to the first entry of the next node
+	if (cursor.eid == currentReadNode->getKeyCount())
 	{
 		//set the pid to the next node if it exists
-		if (cursor.pid = leaf->getNextNodePtr() < 0) return RC_END_OF_TREE;
+		if ((cursor.pid = currentReadNode->getNextNodePtr()) <= 0) return RC_END_OF_TREE;
+		if (currentReadNode->read(cursor.pid, pf)) return RC_FILE_READ_FAILED;
 		//set eid to the first entry
+		currentPage = cursor.pid;
 		cursor.eid = 0;
 	}
-    return 0;
-}
+	//read the entry of target eid
+	if (currentReadNode->readEntry(cursor.eid, key, rid)) return RC_INVALID_CURSOR;
+	//point the cursor to the next entry if the entry is not the last one
+	cursor.eid++;
+	return 0; //success
+} 

@@ -13,7 +13,8 @@
 #include "Bruinbase.h"
 #include "PageFile.h"
 #include "RecordFile.h"
-#define RC_LEAFNODE_OVERFLOW 1001
+#include "BTreeNode.h"
+#define RC_LEAFNODE_OVERFLOW 1
 /**
  * The data structure to point to a particular entry at a b+tree leaf node.
  * An IndexCursor consists of pid (PageId of the leaf node) and 
@@ -31,6 +32,19 @@ typedef struct {
  * Implements a B-Tree index for bruinbase.
  * 
  */
+//
+typedef struct{
+	PageId pid;
+	BTLeafNode node;
+	bool readalready;
+} BTLeafNodeList;
+
+typedef struct{
+	PageId pid;
+	BTNonLeafNode node;
+	bool readalready;
+} BTNonLeafNodeList;
+//
 class BTreeIndex {
  public:
   BTreeIndex();
@@ -56,7 +70,7 @@ class BTreeIndex {
    * @param rid[IN] the RecordId for the record being inserted into the index
    * @return error code. 0 if no error
    */
-  RC insertHelp(int key, const RecordId& rid, int currentHeight, PageId currentPid, PageId &siblingPid, int &siblingKey);
+  RC insertHelp(int key, const RecordId& rid, int currentHeight, PageId currentPid, int& sibingKey, PageId& ipid);
   RC insert(int key, const RecordId& rid);
 
   /**
@@ -93,9 +107,14 @@ class BTreeIndex {
   
  private:
   PageFile pf;         /// the PageFile used to store the actual b+tree in disk
-
   PageId   rootPid;    /// the PageId of the root node
   int      treeHeight; /// the height of the tree
+
+  PageId	 currentPage;	  /// variable for the readForward function, to store the pid of the current read page
+  BTLeafNode *currentReadNode;/* 
+							   * variable for the readForward function, to store the current read leaf node
+							   * this currentReadNode helps reduce the frequent disk read
+							   */
   /// Note that the content of the above two variables will be gone when
   /// this class is destructed. Make sure to store the values of the two 
   /// variables in disk, so that they can be reconstructed when the index
